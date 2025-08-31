@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Upload, FileText, Image, Download, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import './App.css';
 
-// ✅ Use environment variable (falls back to backend on Render if not set)
+// ✅ FIXED: Use correct Render backend URL
 const API_URL = process.env.REACT_APP_API_URL || "https://doc-summarizer-backend01.onrender.com";
 
 function App() {
@@ -69,24 +69,47 @@ function App() {
     formData.append('document', file);
 
     try {
+      console.log('🚀 Uploading to:', `${API_URL}/api/upload`);
+      
       const response = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
         body: formData,
+        // Don't include credentials for now to avoid CORS issues
       });
 
-      const data = await response.json();
+      console.log('📡 Response status:', response.status);
 
       if (!response.ok) {
-        if (data.error?.includes("API limit")) {
-          throw new Error("⚠️ AI quota exceeded. Please try again later.");
+        let errorMessage = 'Upload failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-        throw new Error(data.error || 'Failed to process document');
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log('✅ Upload successful:', data);
+
+      if (!data.success) {
+        throw new Error(data.error || 'Processing failed');
       }
 
       setResult(data);
     } catch (err) {
-      console.error('Upload error:', err);
-      setError(err.message || 'Failed to process document. Please try again.');
+      console.error('❌ Upload error:', err);
+      
+      if (err.message.includes('Failed to fetch')) {
+        setError('❌ Cannot connect to server. Please check your internet connection or try again later.');
+      } else if (err.message.includes('CORS')) {
+        setError('❌ Server configuration error. Please try again later.');
+      } else if (err.message.includes("API limit")) {
+        setError("⚠️ AI quota exceeded. Please try again later.");
+      } else {
+        setError(err.message || 'Failed to process document. Please try again.');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -219,7 +242,6 @@ function App() {
               </div>
             </div>
 
-            {/* ✅ Optional: Show extracted text preview */}
             <div className="summary-content">
               <h3>Extracted Text (Preview)</h3>
               <p className="summary-text">{result.originalText}</p>
