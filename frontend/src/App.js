@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Upload, FileText, Image, Download, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import './App.css';
 
-// ✅ Use environment variable (fallback to Render backend)
+// ✅ Use environment variable (falls back to backend on Render if not set)
 const API_URL = process.env.REACT_APP_API_URL || "https://doc-summarizer-backend.onrender.com";
 
 function App() {
@@ -45,12 +45,12 @@ function App() {
     const maxSize = 10 * 1024 * 1024; // 10MB
 
     if (!allowedTypes.includes(file.type)) {
-      setError('Please select a PDF or image file (JPG, PNG)');
+      setError('❌ Please select a PDF or image file (JPG, PNG)');
       return;
     }
 
     if (file.size > maxSize) {
-      setError('File size must be less than 10MB');
+      setError('❌ File size must be less than 10MB');
       return;
     }
 
@@ -77,6 +77,9 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.error?.includes("API limit")) {
+          throw new Error("⚠️ AI quota exceeded. Please try again later.");
+        }
         throw new Error(data.error || 'Failed to process document');
       }
 
@@ -214,6 +217,12 @@ function App() {
                 <span className="file-name">{result.fileName}</span>
                 <span className="file-size">{formatFileSize(result.fileSize)}</span>
               </div>
+            </div>
+
+            {/* ✅ Optional: Show extracted text preview */}
+            <div className="summary-content">
+              <h3>Extracted Text (Preview)</h3>
+              <p className="summary-text">{result.originalText}</p>
             </div>
 
             <div className="summary-controls">

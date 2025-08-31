@@ -17,18 +17,18 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  'https://doc-summarizer-frontend01.onrender.com', // ✅ your frontend on Render
+  'https://doc-summarizer-frontend01.onrender.com',
   process.env.FRONTEND_URL
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // allow Postman/curl
+    if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
       console.warn('❌ Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false); // safer than throwing error
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -88,22 +88,20 @@ async function extractTextFromImage(filePath) {
 }
 
 async function generateSummary(text, length) {
-  let prompt;
-  switch (length) {
-    case 'short':
-      prompt = `Summarize in 2-3 sentences:\n\n${text}`;
-      break;
-    case 'medium':
-      prompt = `Summarize in 1-2 paragraphs:\n\n${text}`;
-      break;
-    case 'long':
-      prompt = `Summarize in 3-4 paragraphs:\n\n${text}`;
-      break;
-    default:
-      prompt = `Summarize this text:\n\n${text}`;
+  try {
+    let prompt;
+    switch (length) {
+      case 'short': prompt = `Summarize in 2-3 sentences:\n\n${text}`; break;
+      case 'medium': prompt = `Summarize in 1-2 paragraphs:\n\n${text}`; break;
+      case 'long': prompt = `Summarize in 3-4 paragraphs:\n\n${text}`; break;
+      default: prompt = `Summarize this text:\n\n${text}`;
+    }
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (err) {
+    console.error('❌ Gemini API Error:', err.message);
+    return "AI service is currently unavailable. Please try again later.";
   }
-  const result = await model.generateContent(prompt);
-  return result.response.text();
 }
 
 /* =========================
@@ -132,7 +130,7 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
       generateSummary(extractedText, 'long')
     ]);
 
-    fs.unlinkSync(filePath); // cleanup
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // cleanup safely
 
     res.json({
       success: true,
