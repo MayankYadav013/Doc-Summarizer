@@ -3,7 +3,7 @@ import { Upload, FileText, Image, Download, AlertCircle, CheckCircle, Loader } f
 import './App.css';
 
 // ✅ Use environment variable (falls back to backend on Render if not set)
-const API_URL = process.env.REACT_APP_API_URL || "https://doc-summarizer-backend.onrender.com";
+const API_URL = process.env.REACT_APP_API_URL || "https://doc-summarizer-backend01.onrender.com";
 
 function App() {
   const [file, setFile] = useState(null);
