@@ -2,7 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { Upload, FileText, Image, Download, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import './App.css';
 
-const API_URL = "https://doc-summarizer-backend.onrender.com";
+// ✅ Use environment variable (fallback to Render backend)
+const API_URL = process.env.REACT_APP_API_URL || "https://doc-summarizer-backend.onrender.com";
 
 function App() {
   const [file, setFile] = useState(null);
