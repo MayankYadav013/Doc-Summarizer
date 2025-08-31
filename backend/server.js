@@ -11,38 +11,46 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+/* =========================
+   ✅ CORS CONFIGURATION
+   ========================= */
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
   'https://doc-summarizer-beige.vercel.app',
   'https://doc-summarizer-r066pn5at-mayankyadav013s-projects.vercel.app',
+  'https://doc-summarizer-frontend01.onrender.com', 
   process.env.FRONTEND_URL
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Allow requests with no origin (like curl, Postman, mobile apps)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+
+    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
-      console.log('Blocked by CORS:', origin);
-      callback(null, true); // Allow all origins for debugging
+      console.warn('❌ Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
     }
   },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
 
 app.use(express.json());
 app.use(express.static('uploads'));
 
-// Initialize Gemini AI (Free tier model)
+/* =========================
+   ✅ GEMINI AI SETUP
+   ========================= */
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-// Configure multer for file uploads
+/* =========================
+   ✅ MULTER UPLOAD SETUP
+   ========================= */
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = 'uploads/';
@@ -58,150 +66,115 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only PDF and image files are allowed'));
-    }
+
+    if (mimetype && extname) cb(null, true);
+    else cb(new Error('Only PDF and image files are allowed'));
   }
 });
 
-// Extract text from PDF
+/* =========================
+   ✅ HELPER FUNCTIONS
+   ========================= */
 async function extractTextFromPDF(filePath) {
-  try {
-    const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(dataBuffer);
-    return data.text;
-  } catch (error) {
-    throw new Error('Failed to extract text from PDF: ' + error.message);
-  }
+  const dataBuffer = fs.readFileSync(filePath);
+  const data = await pdfParse(dataBuffer);
+  return data.text;
 }
 
-// Extract text from image using OCR
 async function extractTextFromImage(filePath) {
-  try {
-    const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
-      logger: m => console.log(m)
-    });
-    return text;
-  } catch (error) {
-    throw new Error('Failed to extract text from image: ' + error.message);
-  }
+  const { data: { text } } = await Tesseract.recognize(filePath, 'eng');
+  return text;
 }
 
-// Generate summary using Gemini API
 async function generateSummary(text, length) {
-  try {
-    let prompt;
-    
-    switch (length) {
-      case 'short':
-        prompt = `Please provide a concise summary of the following text in 2-3 sentences, highlighting only the most important points:\n\n${text}`;
-        break;
-      case 'medium':
-        prompt = `Please provide a medium-length summary of the following text in 1-2 paragraphs, covering the main ideas and key details:\n\n${text}`;
-        break;
-      case 'long':
-        prompt = `Please provide a comprehensive summary of the following text in 3-4 paragraphs, including main ideas, supporting details, and key insights:\n\n${text}`;
-        break;
-      default:
-        prompt = `Please provide a summary of the following text:\n\n${text}`;
-    }
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
-  } catch (error) {
-    throw new Error('Failed to generate summary: ' + error.message);
+  let prompt;
+  switch (length) {
+    case 'short':
+      prompt = `Summarize in 2-3 sentences:\n\n${text}`;
+      break;
+    case 'medium':
+      prompt = `Summarize in 1-2 paragraphs:\n\n${text}`;
+      break;
+    case 'long':
+      prompt = `Summarize in 3-4 paragraphs:\n\n${text}`;
+      break;
+    default:
+      prompt = `Summarize this text:\n\n${text}`;
   }
+
+  const result = await model.generateContent(prompt);
+  return result.response.text();
 }
 
-// Routes
+/* =========================
+   ✅ ROUTES
+   ========================= */
 app.post('/api/upload', upload.single('document'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const { summaryLength = 'medium' } = req.body;
     const filePath = req.file.path;
-    const fileExtension = path.extname(req.file.originalname).toLowerCase();
-    
-    let extractedText = '';
+    const ext = path.extname(req.file.originalname).toLowerCase();
 
-    // Extract text based on file type
-    if (fileExtension === '.pdf') {
-      extractedText = await extractTextFromPDF(filePath);
-    } else if (['.jpg', '.jpeg', '.png'].includes(fileExtension)) {
-      extractedText = await extractTextFromImage(filePath);
-    } else {
-      return res.status(400).json({ error: 'Unsupported file type' });
-    }
+    let extractedText = '';
+    if (ext === '.pdf') extractedText = await extractTextFromPDF(filePath);
+    else if (['.jpg', '.jpeg', '.png'].includes(ext)) extractedText = await extractTextFromImage(filePath);
+    else return res.status(400).json({ error: 'Unsupported file type' });
 
     if (!extractedText.trim()) {
       return res.status(400).json({ error: 'No text could be extracted from the document' });
     }
 
-    // Generate summaries for all three lengths
     const [shortSummary, mediumSummary, longSummary] = await Promise.all([
       generateSummary(extractedText, 'short'),
       generateSummary(extractedText, 'medium'),
       generateSummary(extractedText, 'long')
     ]);
 
-    // Clean up uploaded file
-    fs.unlinkSync(filePath);
+    fs.unlinkSync(filePath); // clean up
 
     res.json({
       success: true,
       originalText: extractedText.substring(0, 1000) + (extractedText.length > 1000 ? '...' : ''),
-      summaries: {
-        short: shortSummary,
-        medium: mediumSummary,
-        long: longSummary
-      },
+      summaries: { short: shortSummary, medium: mediumSummary, long: longSummary },
       fileName: req.file.originalname,
       fileSize: req.file.size
     });
 
   } catch (error) {
-    console.error('Error processing document:', error);
-    
-    // Clean up file if it exists
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    
-    res.status(500).json({ 
-      error: 'Failed to process document: ' + error.message 
-    });
+    console.error('❌ Error processing document:', error.message);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    res.status(500).json({ error: 'Failed to process document: ' + error.message });
   }
 });
 
-// Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'Server is running', timestamp: new Date().toISOString() });
+  res.json({ status: 'Server running ✅', timestamp: new Date().toISOString() });
 });
 
-// Error handling middleware
+/* =========================
+   ✅ ERROR HANDLER
+   ========================= */
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size too large. Maximum size is 10MB.' });
+      return res.status(400).json({ error: 'File too large. Max size is 10MB.' });
     }
   }
+  console.error('❌ Server Error:', error.message);
   res.status(500).json({ error: error.message });
 });
 
+/* =========================
+   ✅ START SERVER
+   ========================= */
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
