@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Upload, FileText, Image, Download, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import './App.css';
 
-const API_URL = process.env.REACT_APP_API_URL;
+const API_URL = 'https://doc-summarizer-production.up.railway.app';
 
 function App() {
   const [file, setFile] = useState(null);
