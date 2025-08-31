@@ -11,36 +11,38 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// ================= CORS CONFIG =================
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  process.env.FRONTEND_URL // We'll set this in deployment
+  'https://doc-summarizer.vercel.app', 
+  process.env.FRONTEND_URL              
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Allow requests with no origin (e.g., mobile apps, curl)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.log('Blocked by CORS:', origin);
-      callback(null, true); // Allow all origins for now, restrict later if needed
+      console.log('❌ Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true
 }));
 
+// Middleware
 app.use(express.json());
 app.use(express.static('uploads'));
 
-// Initialize Gemini AI (Free tier model)
+// ================= GEMINI AI CONFIG =================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-// Configure multer for file uploads
+// ================= MULTER CONFIG =================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = 'uploads/';
@@ -57,14 +59,12 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     } else {
@@ -73,6 +73,7 @@ const upload = multer({
   }
 });
 
+// ================= HELPERS =================
 // Extract text from PDF
 async function extractTextFromPDF(filePath) {
   try {
@@ -84,7 +85,7 @@ async function extractTextFromPDF(filePath) {
   }
 }
 
-// Extract text from image using OCR
+// Extract text from Image
 async function extractTextFromImage(filePath) {
   try {
     const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
@@ -96,23 +97,22 @@ async function extractTextFromImage(filePath) {
   }
 }
 
-// Generate summary using Gemini API
+// Generate Summary using Gemini API
 async function generateSummary(text, length) {
   try {
     let prompt;
-    
     switch (length) {
       case 'short':
-        prompt = `Please provide a concise summary of the following text in 2-3 sentences, highlighting only the most important points:\n\n${text}`;
+        prompt = `Summarize in 2-3 concise sentences:\n\n${text}`;
         break;
       case 'medium':
-        prompt = `Please provide a medium-length summary of the following text in 1-2 paragraphs, covering the main ideas and key details:\n\n${text}`;
+        prompt = `Summarize in 1-2 paragraphs:\n\n${text}`;
         break;
       case 'long':
-        prompt = `Please provide a comprehensive summary of the following text in 3-4 paragraphs, including main ideas, supporting details, and key insights:\n\n${text}`;
+        prompt = `Provide a comprehensive summary (3-4 paragraphs):\n\n${text}`;
         break;
       default:
-        prompt = `Please provide a summary of the following text:\n\n${text}`;
+        prompt = `Summarize the following text:\n\n${text}`;
     }
 
     const result = await model.generateContent(prompt);
@@ -123,7 +123,8 @@ async function generateSummary(text, length) {
   }
 }
 
-// Routes
+// ================= ROUTES =================
+// Upload + Summarize
 app.post('/api/upload', upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
@@ -133,10 +134,8 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
     const { summaryLength = 'medium' } = req.body;
     const filePath = req.file.path;
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
-    
-    let extractedText = '';
 
-    // Extract text based on file type
+    let extractedText = '';
     if (fileExtension === '.pdf') {
       extractedText = await extractTextFromPDF(filePath);
     } else if (['.jpg', '.jpeg', '.png'].includes(fileExtension)) {
@@ -149,7 +148,6 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
       return res.status(400).json({ error: 'No text could be extracted from the document' });
     }
 
-    // Generate summaries for all three lengths
     const [shortSummary, mediumSummary, longSummary] = await Promise.all([
       generateSummary(extractedText, 'short'),
       generateSummary(extractedText, 'medium'),
@@ -173,19 +171,16 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
 
   } catch (error) {
     console.error('Error processing document:', error);
-    
-    // Clean up file if it exists
+
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    
-    res.status(500).json({ 
-      error: 'Failed to process document: ' + error.message 
-    });
+
+    res.status(500).json({ error: 'Failed to process document: ' + error.message });
   }
 });
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'Server is running', timestamp: new Date().toISOString() });
 });
@@ -194,12 +189,13 @@ app.get('/api/health', (req, res) => {
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size too large. Maximum size is 10MB.' });
+      return res.status(400).json({ error: 'File size too large. Max 10MB.' });
     }
   }
   res.status(500).json({ error: error.message });
 });
 
+// ================= START SERVER =================
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`✅ Server is running on port ${PORT}`);
 });
