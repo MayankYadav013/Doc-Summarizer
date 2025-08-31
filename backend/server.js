@@ -17,17 +17,13 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  'https://doc-summarizer-beige.vercel.app',
-  'https://doc-summarizer-r066pn5at-mayankyadav013s-projects.vercel.app',
-  'https://doc-summarizer-frontend01.onrender.com', 
+  'https://doc-summarizer-frontend01.onrender.com', // ✅ your frontend on Render
   process.env.FRONTEND_URL
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like curl, Postman, mobile apps)
-    if (!origin) return callback(null, true);
-
+    if (!origin) return callback(null, true); // allow Postman/curl
     if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
@@ -72,7 +68,6 @@ const upload = multer({
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-
     if (mimetype && extname) cb(null, true);
     else cb(new Error('Only PDF and image files are allowed'));
   }
@@ -107,7 +102,6 @@ async function generateSummary(text, length) {
     default:
       prompt = `Summarize this text:\n\n${text}`;
   }
-
   const result = await model.generateContent(prompt);
   return result.response.text();
 }
@@ -138,7 +132,7 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
       generateSummary(extractedText, 'long')
     ]);
 
-    fs.unlinkSync(filePath); // clean up
+    fs.unlinkSync(filePath); // cleanup
 
     res.json({
       success: true,
@@ -163,10 +157,8 @@ app.get('/api/health', (req, res) => {
    ✅ ERROR HANDLER
    ========================= */
 app.use((error, req, res, next) => {
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Max size is 10MB.' });
-    }
+  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'File too large. Max size is 10MB.' });
   }
   console.error('❌ Server Error:', error.message);
   res.status(500).json({ error: error.message });
