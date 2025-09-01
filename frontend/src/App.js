@@ -2,7 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { Upload, FileText, Image, Download, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import './App.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// ✅ FIXED: Use correct Render backend URL
+const API_URL = process.env.REACT_APP_API_URL || "https://doc-summarizer-backend01.onrender.com";
 
 function App() {
   const [file, setFile] = useState(null);
@@ -44,12 +45,12 @@ function App() {
     const maxSize = 10 * 1024 * 1024; // 10MB
 
     if (!allowedTypes.includes(file.type)) {
-      setError('Please select a PDF or image file (JPG, PNG)');
+      setError('❌ Please select a PDF or image file (JPG, PNG)');
       return;
     }
 
     if (file.size > maxSize) {
-      setError('File size must be less than 10MB');
+      setError('❌ File size must be less than 10MB');
       return;
     }
 
@@ -68,21 +69,47 @@ function App() {
     formData.append('document', file);
 
     try {
+      console.log('🚀 Uploading to:', `${API_URL}/api/upload`);
+      
       const response = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
         body: formData,
+        // Don't include credentials for now to avoid CORS issues
       });
 
-      const data = await response.json();
+      console.log('📡 Response status:', response.status);
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to process document');
+        let errorMessage = 'Upload failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log('✅ Upload successful:', data);
+
+      if (!data.success) {
+        throw new Error(data.error || 'Processing failed');
       }
 
       setResult(data);
     } catch (err) {
-      console.error('Upload error:', err);
-      setError(err.message || 'Failed to process document. Please try again.');
+      console.error('❌ Upload error:', err);
+      
+      if (err.message.includes('Failed to fetch')) {
+        setError('❌ Cannot connect to server. Please check your internet connection or try again later.');
+      } else if (err.message.includes('CORS')) {
+        setError('❌ Server configuration error. Please try again later.');
+      } else if (err.message.includes("API limit")) {
+        setError("⚠️ AI quota exceeded. Please try again later.");
+      } else {
+        setError(err.message || 'Failed to process document. Please try again.');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -213,6 +240,11 @@ function App() {
                 <span className="file-name">{result.fileName}</span>
                 <span className="file-size">{formatFileSize(result.fileSize)}</span>
               </div>
+            </div>
+
+            <div className="summary-content">
+              <h3>Extracted Text (Preview)</h3>
+              <p className="summary-text">{result.originalText}</p>
             </div>
 
             <div className="summary-controls">
