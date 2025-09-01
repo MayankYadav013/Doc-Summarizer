@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  'https://vercel.com/mayankyadav013s-projects/doc-summarizer/6fCice89yVta7ir7EvVDUG59J4vn',
+  'https://doc-summarizer-cyan.vercel.app',  // ✅ Add this exact domain
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
